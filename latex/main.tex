@@ -92,10 +92,7 @@ When sampling trajectories from $p_{\text{sample}}(x_{1:T}, z_{1:T})$ but traini
 \nabla J_{\text{train}} &= \mathbb{E}_{p_{\text{sample}}(x_{1:T}, z_{1:T})}\left[\frac{p_{\text{train}}(x_{1:T}, z_{1:T})}{p_{\text{sample}}(x_{1:T}, z_{1:T})} A(x_{1:T}) \sum_{t=1}^T \nabla \log p_{\text{train}}(x_t, z_t|x_{<t})\right]
 \end{align}
 
-The importance weight decomposes as:
-$$\frac{p_{\text{train}}(x_{1:T}, z_{1:T})}{p_{\text{sample}}(x_{1:T}, z_{1:T})} = \prod_{t=1}^T \frac{p_{\text{train}}(x_t|z_t, x_{<t})}{p_{\text{sample}}(x_t|z_t, x_{<t})} \cdot \frac{p_{\text{train}}(z_t|x_{<t})}{p_{\text{sample}}(z_t|x_{<t})}$$
-
-This importance weight is critical for maintaining unbiased gradient estimates when the sampling and training distributions differ. \textbf{The key insight is that we must replay the expert choices $z_{1:T}$ from the sampling distribution to correctly estimate gradients for the router.}
+This importance weight is critical for maintaining unbiased gradient estimates when the sampling and training distributions differ. \textbf{The key insight is that we must replay the expert choices $z_{1:T}$ from the sampling distribution to correctly estimate gradients for the router.} Following standard practice in policy optimization, we clip the importance weights to reduce variance; importantly, this clipping must be applied to the router weights as well as the token generation weights.
 
 \section{Method}
 
