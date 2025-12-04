@@ -31,14 +31,14 @@ Maybe need more experiments on router parameterization
 \section{Related Work}
 Recent work \citep{zheng2025stabilizing} addresses stabilizing reinforcement learning for language models. Work on MoE reinforcement learning \citep{ma2025stabilizing} has explored various approaches to expert routing. However, these methods do not fully account for the latent variable structure of expert selection.
 
-\section{Problem Setup}
-Consider the autoregressive generation of a sequence $x_{1:T} = (x_1, \ldots, x_T)$. We propose to model MoE expert choice as a latent variable $z_t$ at each position $t$. When predicting token $x_t$, the MoE makes a hard decision about which subset of experts to use. WLOG and for simplicity, we consider a single-layer MoE. This yields the joint probability $p_{\theta,\phi}(x_t, z_t|x_{<t})$ over tokens and expert choices at each step.
+\section{Latent Variable Experts}
+Consider the autoregressive generation of a sequence $x = (x_1, \ldots, x_T)$. We propose to model MoE expert choice as a latent variable $z_t$ at each position $t$. When predicting token $x_t$, the MoE makes a hard decision about which subset of experts to use. WLOG and for simplicity, we consider a single-layer MoE. This yields the joint probability $p_{\theta,\phi}(x_t, z_t|x_{<t})$ over tokens and expert choices at each step.
 
-For a complete sequence with corresponding expert choices $z_{1:T} = (z_1, \ldots, z_T)$, we can write:
-$$p_{\theta,\phi}(x_{1:T}, z_{1:T}) = \prod_{t=1}^T p_{\theta,\phi}(x_t, z_t | x_{<t}) = \prod_{t=1}^T p_{\theta,\phi}(x_t\mid z_t, x_{<t})p(z_t \mid x_{<t})$$
+For a complete sequence $x$ with corresponding expert choices $z = (z_1, \ldots, z_T)$, we can write:
+$$p_{\theta,\phi}(x, z) = \prod_{t=1}^T p_{\theta,\phi}(x_t, z_t | x_{<t}) = \prod_{t=1}^T p_{\theta,\phi}(x_t\mid z_t, x_{<t})p(z_t \mid x_{<t})$$
 
 Our goal is to optimize the expected reward over complete sequences:
-$$J(\theta, \phi) = \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}[R(x_{1:T})],$$
+$$J(\theta, \phi) = \mathbb{E}_{p_{\theta,\phi}(x, z)}[R(x)],$$
 where $R$ is a reward function that depends on the generated sequence.
 
 \subsection{Policy Gradient Estimator}
@@ -48,29 +48,29 @@ where $p_\theta(x_t|z_t, x_{<t})$ is the token generation distribution given exp
 
 Taking the gradient with respect to all parameters $\{\theta, \phi\}$:
 \begin{align}
-\nabla J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[R(x_{1:T}) \nabla \log p_{\theta,\phi}(x_{1:T}, z_{1:T})\right] \\
-&= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[R(x_{1:T}) \sum_{t=1}^T \nabla \log p_{\theta,\phi}(x_t, z_t | x_{<t})\right] \\
-&= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[R(x_{1:T}) \sum_{t=1}^T \left(\nabla_\theta \log p_\theta(x_t|z_t, x_{<t}) + \nabla_\phi \log p_\phi(z_t|x_{<t})\right)\right]
+\nabla J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x, z)}\left[R(x) \nabla \log p_{\theta,\phi}(x, z)\right] \\
+&= \mathbb{E}_{p_{\theta,\phi}(x, z)}\left[R(x) \sum_{t=1}^T \nabla \log p_{\theta,\phi}(x_t, z_t | x_{<t})\right] \\
+&= \mathbb{E}_{p_{\theta,\phi}(x, z)}\left[R(x) \sum_{t=1}^T \left(\nabla_\theta \log p_\theta(x_t|z_t, x_{<t}) + \nabla_\phi \log p_\phi(z_t|x_{<t})\right)\right]
 \end{align}
 
-With a baseline $b(x_{<T})$, we can write this as:
+With a baseline $b$, we can write this as:
 \begin{align}
-\nabla J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[A(x_{1:T}) \sum_{t=1}^T \left(\nabla_\theta \log p_\theta(x_t|z_t, x_{<t}) + \nabla_\phi \log p_\phi(z_t|x_{<t})\right)\right]
+\nabla J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x, z)}\left[A(x) \sum_{t=1}^T \left(\nabla_\theta \log p_\theta(x_t|z_t, x_{<t}) + \nabla_\phi \log p_\phi(z_t|x_{<t})\right)\right]
 \end{align}
-where $A(x_{1:T}) = R(x_{1:T}) - b(x_{<T})$.
+where $A(x) = R(x) - b$.
 
 \subsection{Separating Token and Router Gradients}
 The gradient with respect to token generation parameters $\theta$ is:
 \begin{align}
-\nabla_\theta J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[A(x_{1:T}) \sum_{t=1}^T \nabla_\theta \log p_\theta(x_t|z_t, x_{<t})\right]
+\nabla_\theta J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x, z)}\left[A(x) \sum_{t=1}^T \nabla_\theta \log p_\theta(x_t|z_t, x_{<t})\right]
 \end{align}
 
 The gradient with respect to router parameters $\phi$ is:
 \begin{align}
-\nabla_\phi J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[A(x_{1:T}) \sum_{t=1}^T \nabla_\phi \log p_\phi(z_t|x_{<t})\right]
+\nabla_\phi J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x, z)}\left[A(x) \sum_{t=1}^T \nabla_\phi \log p_\phi(z_t|x_{<t})\right]
 \end{align}
 
-Note that both gradients require sampling from the full joint distribution $p_{\theta,\phi}(x_{1:T}, z_{1:T})$, which means we must sample both tokens $x_{1:T}$ and expert choices $z_{1:T}$ together during rollout.
+Note that both gradients require sampling from the full joint distribution $p_{\theta,\phi}(x, z)$, which means we must sample both tokens $x$ and expert choices $z$ together during rollout.
 
 \subsection{Router Parameterization}
 The router $p_\phi(z_t|x_{<t})$ is parameterized as a Plackett-Luce distribution \citep{plackett1975analysis, luce1959individual}, which models the probability of selecting a subset of $k$ experts from $K$ total experts. 
@@ -87,12 +87,12 @@ The Plackett-Luce formulation naturally handles top-$k$ expert selection and res
 \subsection{Importance Sampling Correction}
 Prior work on MoE RL uses the straight-through estimator for $\nabla_\phi J(\theta, \phi)$, which ignores the routing distribution entirely during backpropagation. This leads to biased gradients. 
 
-When sampling trajectories from $p_{\text{sample}}(x_{1:T}, z_{1:T})$ but training under $p_{\text{train}}(x_{1:T}, z_{1:T})$, we require importance sampling:
+When sampling trajectories from $p_{\text{sample}}(x, z)$ but training under $p_{\text{train}}(x, z)$, we require importance sampling:
 \begin{align}
-\nabla J_{\text{train}} &= \mathbb{E}_{p_{\text{sample}}(x_{1:T}, z_{1:T})}\left[\frac{p_{\text{train}}(x_{1:T}, z_{1:T})}{p_{\text{sample}}(x_{1:T}, z_{1:T})} A(x_{1:T}) \sum_{t=1}^T \nabla \log p_{\text{train}}(x_t, z_t|x_{<t})\right]
+\nabla J_{\text{train}} &= \mathbb{E}_{p_{\text{sample}}(x, z)}\left[\frac{p_{\text{train}}(x, z)}{p_{\text{sample}}(x, z)} A(x) \nabla \log p_{\text{train}}(x, z)\right]
 \end{align}
 
-This importance weight is critical for maintaining unbiased gradient estimates when the sampling and training distributions differ. \textbf{The key insight is that we must replay the expert choices $z_{1:T}$ from the sampling distribution to correctly estimate gradients for the router.} Following standard practice in policy optimization, we clip the importance weights to reduce variance; importantly, this clipping must be applied to the router weights as well as the token generation weights.
+This importance weight is critical for maintaining unbiased gradient estimates when the sampling and training distributions differ. \textbf{The key insight is that we must replay the expert choices $z$ from the sampling distribution to correctly estimate gradients for the router.} Following standard practice in policy optimization, we clip the importance weights to reduce variance; importantly, this clipping must be applied to the router weights as well as the token generation weights.
 
 \section{Method}
 
