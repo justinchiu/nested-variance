@@ -19,6 +19,8 @@
 \section{Introduction}
 MoE RL is infamously unstable. In this paper, we show that MoE RL can be stabilized by formalizing it as a latent variable problem and taking a principled approach to training both token generation and expert routing jointly. Additionally, leaning on the theory from Nested Monte Carlo Estimators, we perform toy simulations to study the variance increase induced by bugs that arise from not properly accounting for the latent variable structure. Formally, not having routing replay results in a nested estimator \citep{rainforth2018} with increased variance.
 
+Common approach is to use greedy topk for router choice. This is ok on in-domain data, as router has been balanced. How to adapt to new data? Would be nice to do RL.
+
 Contributions:
 Through LVM formulation
 \begin{itemize}
