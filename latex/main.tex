@@ -1,0 +1,117 @@
+\documentclass{article}
+\usepackage{graphicx} % Required for inserting images
+\usepackage{amsmath}  % For mathematical equations
+\usepackage{amssymb}  % For mathematical symbols
+\usepackage{amsthm}   % For theorems
+\usepackage{algorithm} % For algorithms
+\usepackage{algorithmic} % For algorithmic environment
+\usepackage{hyperref} % For hyperlinks
+\usepackage{natbib}   % For citations
+
+\title{MoE Replay: Stabilizing Mixture-of-Experts Reinforcement Learning via Latent Variable Modeling}
+\author{ }
+\date{}
+
+\begin{document}
+
+\maketitle
+
+\section{Introduction}
+MoE RL is infamously unstable. In this paper, we show that MoE RL can be stabilized by formalizing it as a latent variable problem and taking a principled approach to training both token generation and expert routing jointly. Additionally, leaning on the theory from Nested Monte Carlo Estimators, we perform toy simulations to study the variance increase induced by bugs that arise from not properly accounting for the latent variable structure. Formally, not having routing replay results in a nested estimator \citep{rainforth2018} with increased variance.
+
+Contributions:
+Through LVM formulation
+\begin{itemize}
+\item Propose router clipping
+\item Justify routing replay
+\item Stabilize results and scale?
+\end{itemize}
+Maybe need more experiments on router parameterization
+
+\section{Related Work}
+Recent work \citep{zheng2025stabilizing} addresses stabilizing reinforcement learning for language models. Work on MoE reinforcement learning \citep{ma2025stabilizing} has explored various approaches to expert routing. However, these methods do not fully account for the latent variable structure of expert selection.
+
+\section{Problem Setup}
+Consider the autoregressive generation of a sequence $x_{1:T} = (x_1, \ldots, x_T)$. We propose to model MoE expert choice as a latent variable $z_t$ at each position $t$. When predicting token $x_t$, the MoE makes a hard decision about which subset of experts to use. WLOG and for simplicity, we consider a single-layer MoE. This yields the joint probability $p_{\theta,\phi}(x_t, z_t|x_{<t})$ over tokens and expert choices at each step.
+
+For a complete sequence with corresponding expert choices $z_{1:T} = (z_1, \ldots, z_T)$, we can write:
+$$p_{\theta,\phi}(x_{1:T}, z_{1:T}) = \prod_{t=1}^T p_{\theta,\phi}(x_t, z_t | x_{<t}) = \prod_{t=1}^T p_{\theta,\phi}(x_t\mid z_t, x_{<t})p(z_t \mid x_{<t})$$
+
+Our goal is to optimize the expected reward over complete sequences:
+$$J(\theta, \phi) = \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}[R(x_{1:T})],$$
+where $R$ is a reward function that depends on the generated sequence.
+
+\subsection{Policy Gradient Estimator}
+We can decompose the joint distribution at each step as:
+$$p_{\theta,\phi}(x_t, z_t|x_{<t}) = p_\theta(x_t|z_t, x_{<t}) p_\phi(z_t|x_{<t})$$
+where $p_\theta(x_t|z_t, x_{<t})$ is the token generation distribution given expert choice $z_t$, and $p_\phi(z_t|x_{<t})$ is the router distribution.
+
+Taking the gradient with respect to all parameters $\{\theta, \phi\}$:
+\begin{align}
+\nabla J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[R(x_{1:T}) \nabla \log p_{\theta,\phi}(x_{1:T}, z_{1:T})\right] \\
+&= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[R(x_{1:T}) \sum_{t=1}^T \nabla \log p_{\theta,\phi}(x_t, z_t | x_{<t})\right] \\
+&= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[R(x_{1:T}) \sum_{t=1}^T \left(\nabla_\theta \log p_\theta(x_t|z_t, x_{<t}) + \nabla_\phi \log p_\phi(z_t|x_{<t})\right)\right]
+\end{align}
+
+With a baseline $b(x_{<T})$, we can write this as:
+\begin{align}
+\nabla J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[A(x_{1:T}) \sum_{t=1}^T \left(\nabla_\theta \log p_\theta(x_t|z_t, x_{<t}) + \nabla_\phi \log p_\phi(z_t|x_{<t})\right)\right]
+\end{align}
+where $A(x_{1:T}) = R(x_{1:T}) - b(x_{<T})$.
+
+\subsection{Separating Token and Router Gradients}
+The gradient with respect to token generation parameters $\theta$ is:
+\begin{align}
+\nabla_\theta J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[A(x_{1:T}) \sum_{t=1}^T \nabla_\theta \log p_\theta(x_t|z_t, x_{<t})\right]
+\end{align}
+
+The gradient with respect to router parameters $\phi$ is:
+\begin{align}
+\nabla_\phi J(\theta, \phi) &= \mathbb{E}_{p_{\theta,\phi}(x_{1:T}, z_{1:T})}\left[A(x_{1:T}) \sum_{t=1}^T \nabla_\phi \log p_\phi(z_t|x_{<t})\right]
+\end{align}
+
+Note that both gradients require sampling from the full joint distribution $p_{\theta,\phi}(x_{1:T}, z_{1:T})$, which means we must sample both tokens $x_{1:T}$ and expert choices $z_{1:T}$ together during rollout.
+
+\subsection{Router Parameterization}
+The router $p_\phi(z_t|x_{<t})$ is parameterized as a Plackett-Luce distribution \citep{plackett1975analysis, luce1959individual}, which models the probability of selecting a subset of $k$ experts from $K$ total experts. 
+
+Let $s_j = \exp(\phi_j^\top h(x_{<t}))$ denote the score for expert $j$, where $h(x_{<t})$ is a hidden representation of the context. For a top-$k$ selection $z_t = (\pi_1, \ldots, \pi_k)$ where $\pi_i$ is the $i$-th selected expert, the Plackett-Luce probability is:
+$$p_\phi(z_t|x_{<t}) = \prod_{i=1}^{k} \frac{s_{\pi_i}}{\sum_{j \in \mathcal{R}_i} s_j}$$
+where $\mathcal{R}_i$ is the set of remaining experts at stage $i$ (i.e., experts not yet selected in positions $1, \ldots, i-1$).
+
+For the special case of top-1 routing ($k=1$), this reduces to:
+$$p_\phi(z_t=j|x_{<t}) = \frac{\exp(\phi_j^\top h(x_{<t}))}{\sum_{\ell=1}^K \exp(\phi_\ell^\top h(x_{<t}))}$$
+
+The Plackett-Luce formulation naturally handles top-$k$ expert selection and respects the ranked ordering of expert preferences, which is crucial for MoE routing \citep{shazeer2017outrageously}.
+
+\subsection{Importance Sampling Correction}
+Prior work on MoE RL uses the straight-through estimator for $\nabla_\phi J(\theta, \phi)$, which ignores the routing distribution entirely during backpropagation. This leads to biased gradients. 
+
+When sampling trajectories from $p_{\text{sample}}(x_{1:T}, z_{1:T})$ but training under $p_{\text{train}}(x_{1:T}, z_{1:T})$, we require importance sampling:
+\begin{align}
+\nabla J_{\text{train}} &= \mathbb{E}_{p_{\text{sample}}(x_{1:T}, z_{1:T})}\left[\frac{p_{\text{train}}(x_{1:T}, z_{1:T})}{p_{\text{sample}}(x_{1:T}, z_{1:T})} A(x_{1:T}) \sum_{t=1}^T \nabla \log p_{\text{train}}(x_t, z_t|x_{<t})\right]
+\end{align}
+
+The importance weight decomposes as:
+$$\frac{p_{\text{train}}(x_{1:T}, z_{1:T})}{p_{\text{sample}}(x_{1:T}, z_{1:T})} = \prod_{t=1}^T \frac{p_{\text{train}}(x_t|z_t, x_{<t})}{p_{\text{sample}}(x_t|z_t, x_{<t})} \cdot \frac{p_{\text{train}}(z_t|x_{<t})}{p_{\text{sample}}(z_t|x_{<t})}$$
+
+This importance weight is critical for maintaining unbiased gradient estimates when the sampling and training distributions differ. \textbf{The key insight is that we must replay the expert choices $z_{1:T}$ from the sampling distribution to correctly estimate gradients for the router.}
+
+\section{Method}
+
+
+
+\section{Experiments}
+
+
+\section{Analysis}
+\begin{itemize}
+\item Variance analysis of nested estimators
+\item Comparison with straight-through estimator
+\item Effect of routing replay on stability
+\end{itemize}
+
+\bibliographystyle{plainnat}
+\bibliography{references}
+
+\end{document}
